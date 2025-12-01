@@ -136,7 +136,7 @@ public class Run {
             String content = URLEncoder.encode(body, "UTF-8");
             String scheme = URLEncoder.encode("com.baidu.tieba://", "UTF-8");
             String icon = "https://raw.githubusercontent.com/NOSR2006/Tieba/refs/heads/master/icon/Tieba.png";
-            String urlx = "https://bark.nosr.top/" + token + "/" + title + "/" + content + "?icon=" + icon
+            String urlx = "https://api.day.app/" + token + "/" + title + "/" + content + "?icon=" + icon
                     + "&url=" + scheme;
             URL url = new URL(urlx);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
