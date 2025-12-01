@@ -128,18 +128,16 @@ public class Run {
     }
 
     public void send(String sckey) {
-        String text = "总共关注" + followNum + "个吧\n";
-        text += "成功签到" + success.size() + "个吧\n" + "签到失败" + String.format("%02d", (followNum - success.size())) + "个吧";
-        String desp = "总共关注" + followNum + "个吧\n";
-        desp += "成功签到" + success.size() + "个吧\n" + "签到失败" + String.format("%02d", (followNum - success.size())) + "个吧";
-        String body = "text=" + text + "&desp=" + "TiebaSignIn运行结果" + desp;
+        String body = "总共关注" + followNum + "个吧\n";
+        body += "成功签到" + success.size() + "个吧\n" + "签到失败" + String.format("%02d", (followNum - success.size())) + "个吧";
         try {
             String token = sckey;
             String title = URLEncoder.encode("Tieba", "UTF-8");
-            String content = URLEncoder.encode(desp, "UTF-8");
+            String content = URLEncoder.encode(body, "UTF-8");
+            String scheme = URLEncoder.encode("com.baidu.tieba://", "UTF-8");
             String icon = "https://raw.githubusercontent.com/NOSR2006/Tieba/refs/heads/master/icon/Tieba.png";
             String urlx = "https://bark.nosr.top/" + token + "/" + title + "/" + content + "?icon=" + icon
-                    + "&url=com.baidu.tieba://";
+                    + "&url=" + scheme;
             URL url = new URL(urlx);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
