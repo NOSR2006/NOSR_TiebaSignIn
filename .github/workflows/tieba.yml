@@ -1,4 +1,4 @@
-name: Start
+name: SignIn
 
 on:
   workflow_dispatch:

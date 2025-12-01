@@ -1,3 +1,5 @@
+name: KeepAlive
+
 on:
   schedule:
     - cron: "0 16 * * *" # daily at 00:00 UTC; workflow will only push when 30 days passed since last push
