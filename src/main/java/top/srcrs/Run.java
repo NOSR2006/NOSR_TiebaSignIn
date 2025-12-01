@@ -1,4 +1,5 @@
 package top.srcrs;
+
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import org.apache.http.HttpEntity;
@@ -32,6 +33,7 @@ public class Run {
     private static List<String> invalid = new ArrayList<>();
     private String tbs = "";
     private static Integer followNum = 201;
+
     public static void main(String[] args) {
         Cookie cookie = Cookie.getInstance();
         if (args.length == 0) {
@@ -53,20 +55,20 @@ public class Run {
         try {
             JSONObject jsonObject = Request.get(TBS_URL);
             if ("1".equals(jsonObject.getString("is_login"))) {
-                LOGGER.info("获取TBS成功");
+                LOGGER.info("TBS获取成功");
                 tbs = jsonObject.getString("tbs");
             } else {
-                LOGGER.warn("获取TBS失败 -- " + jsonObject);
+                LOGGER.warn("TBS获取失败 -- " + jsonObject);
             }
         } catch (Exception e) {
-            LOGGER.error("获取TBS部分出现错误 -- " + e);
+            LOGGER.error("TBS获取部分出现错误 -- " + e);
         }
     }
 
     public void getFollow() {
         try {
             JSONObject jsonObject = Request.get(LIKE_URL);
-            LOGGER.info("获取贴吧列表成功");
+            LOGGER.info("贴吧列表获取成功");
             JSONArray jsonArray = jsonObject.getJSONObject("data").getJSONArray("like_forum");
             followNum = jsonArray.size();
             for (Object array : jsonArray) {
@@ -83,7 +85,7 @@ public class Run {
                 }
             }
         } catch (Exception e) {
-            LOGGER.error("获取贴吧列表部分出现错误 -- " + e);
+            LOGGER.error("贴吧列表获取部分出现错误 -- " + e);
         }
     }
 
@@ -92,12 +94,13 @@ public class Run {
         try {
             while (success.size() < followNum && flag > 0) {
                 LOGGER.info("-----第 {} 轮签到开始-----", 5 - flag + 1);
-                LOGGER.info("还剩 {} 贴吧需要签到", followNum - success.size());
+                LOGGER.info("剩余 {} 个吧需要签到", followNum - success.size());
                 Iterator<String> iterator = follow.iterator();
                 while (iterator.hasNext()) {
                     String s = iterator.next();
                     String rotation = s.replace("%2B", "+");
-                    String body = "kw=" + s + "&tbs=" + tbs + "&sign=" + Encryption.enCodeMd5("kw=" + rotation + "tbs=" + tbs + "tiebaclient!!!");
+                    String body = "kw=" + s + "&tbs=" + tbs + "&sign="
+                            + Encryption.enCodeMd5("kw=" + rotation + "tbs=" + tbs + "tiebaclient!!!");
                     JSONObject post = new JSONObject();
                     post = Request.post(SIGN_URL, body);
                     int randomTime = new Random().nextInt(200) + 300;
@@ -135,7 +138,8 @@ public class Run {
             String title = URLEncoder.encode("Tieba", "UTF-8");
             String content = URLEncoder.encode(desp, "UTF-8");
             String icon = "https://raw.githubusercontent.com/NOSR2006/Tieba/refs/heads/master/icon/Tieba.png";
-            String urlx = "https://api.day.app/" + token + "/" + title + "/" + content + "?icon=" + icon + "?url=com.baidu.tieba://";
+            String urlx = "https://bark.nosr.top/" + token + "/" + title + "/" + content + "?icon=" + icon
+                    + "&url=com.baidu.tieba://";
             URL url = new URL(urlx);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
