@@ -27,6 +27,8 @@ jobs:
           BDUSS: ${{ secrets.BDUSS }}
           BARK_KEY_SELF: ${{ secrets.BARK_KEY_SELF }}
           BARK_KEY_OFFICIAL: ${{ secrets.BARK_KEY_OFFICIAL }}
+          # 自建域名对境外 IP 有 WAF 地理质询，Actions 走 workers.dev 直连
+          BARK_HOST_SELF: https://nosr-bark.nosr.workers.dev
         run: python run.py
 
   workflow-keepalive:
