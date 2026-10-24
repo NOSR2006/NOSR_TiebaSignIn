@@ -4,6 +4,8 @@
 用法:
     python run.py                          # 自动读取环境变量 BDUSS
     python run.py --bduss "your_bduss"     # 命令行传入 BDUSS
+
+推送: notify.py 的 Bark 双通道（BARK_KEY_SELF / BARK_KEY_OFFICIAL）。
 """
 
 import argparse
@@ -11,9 +13,15 @@ import logging
 import os
 import random
 import time
+from datetime import datetime, timedelta, timezone
 
+import notify
 from tieba_client import TiebaClient
 
+BJ_TZ = timezone(timedelta(hours=8))
+logging.Formatter.converter = staticmethod(
+    lambda s: datetime.fromtimestamp(s, BJ_TZ).timetuple()
+)
 logging.basicConfig(
     level=logging.INFO,
     format="[%(levelname)s] %(asctime)s: %(message)s",
@@ -24,17 +32,72 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> str:
     parser = argparse.ArgumentParser(description="百度贴吧自动签到")
-    parser.add_argument(
-        "--bduss",
-        default=None,
-        help="贴吧 BDUSS Cookie 值（优先级高于环境变量）",
-    )
+    parser.add_argument("--bduss", default=None, help="贴吧 BDUSS Cookie 值（优先级高于环境变量）")
     args = parser.parse_args()
-
     bduss = args.bduss or os.environ.get("BDUSS", "")
     if not bduss:
         parser.error("请通过 --bduss 参数或 BDUSS 环境变量提供 BDUSS")
     return bduss
+
+
+def sign_round(
+    client: TiebaClient,
+    forums: list[dict],
+    tbs: str,
+    stats: dict,
+    *,
+    delay_range: tuple[float, float],
+    extra_rest: tuple[float, float],
+    prefix: str = "",
+) -> list[dict]:
+    """对 forums 执行一轮签到，返回仍然失败的贴吧列表。"""
+    failed = []
+    total = len(forums)
+    for idx, forum in enumerate(forums):
+        time.sleep(random.uniform(*delay_range))
+        if (idx + 1) % 10 == 0:
+            extra = random.uniform(*extra_rest)
+            logger.info(f"已处理 {idx + 1}/{total} 个，休息 {extra:.1f}s ...")
+            time.sleep(extra)
+
+        fid, fname = forum.get("id", ""), forum.get("name", "")
+        result = client.sign_forum(fid, fname, tbs)
+        status = result["status"]
+        stats[status] += 1
+
+        tag = f"【{fname}】({prefix}{idx + 1}/{total})"
+        if status == "success":
+            rank = f"，第 {result['rank']} 个签到" if result.get("rank") else ""
+            logger.info(f"{tag} 签到成功{rank}")
+        elif status == "exist":
+            logger.info(f"{tag} {result['message']}")
+        elif status == "shield":
+            logger.warning(f"{tag} {result['message']}")
+        else:
+            logger.error(f"{tag} 签到失败: {result['message']}")
+            failed.append(forum)
+    return failed
+
+
+def build_summary(total: int, stats: dict, failed: list[dict]) -> tuple[str, str, str]:
+    """返回 (推送标题, 推送正文, 推送等级)。"""
+    now = datetime.now(BJ_TZ)
+    title = f"贴吧签到 {now:%m-%d} · 成功 {stats['success']}/{total}"
+    lines = [
+        f"时间: {now:%Y-%m-%d %H:%M:%S}",
+        f"贴吧总数: {total}",
+        f"签到成功: {stats['success']}",
+        f"已经签到: {stats['exist']}",
+        f"被屏蔽: {stats['shield']}",
+        f"签到失败: {stats['error']}",
+    ]
+    level = "active"
+    if failed:
+        lines.append("失败贴吧: " + "、".join(f.get("name", "") for f in failed))
+        level = "timeSensitive"
+    if stats["error"] > 0 or stats["shield"] > 0:
+        level = "timeSensitive"
+    return title, "\n".join(lines), level
 
 
 def main() -> None:
@@ -44,7 +107,7 @@ def main() -> None:
     # 1. 获取 tbs
     logger.info("正在获取 tbs...")
     tbs = client.get_tbs()
-    if tbs is None:
+    if not tbs:
         logger.error("获取 tbs 失败，退出")
         raise SystemExit(1)
 
@@ -53,53 +116,68 @@ def main() -> None:
     forums = client.get_favorites()
     if not forums:
         logger.warning("未获取到关注的贴吧，签到结束")
+        notify.send("贴吧签到 · 无关注贴吧", "未获取到关注的贴吧，本次未执行签到")
         return
 
-    # 3. 逐个签到 (带节流)
     total = len(forums)
-    logger.info(f"开始签到 {total} 个贴吧")
-
     stats = {"success": 0, "exist": 0, "shield": 0, "error": 0}
-    for idx, forum in enumerate(forums):
-        # 节流: 随机间隔 1.0-2.5 秒
-        delay = random.uniform(1.0, 2.5)
-        time.sleep(delay)
 
-        # 每 10 个贴吧额外休息 5-10 秒
-        if (idx + 1) % 10 == 0:
-            extra = random.uniform(5, 10)
-            logger.info(f"已签到 {idx + 1}/{total} 个，休息 {extra:.1f}s ...")
-            time.sleep(extra)
+    # 3.1 第一轮
+    logger.info(f"开始第 1 轮签到，共 {total} 个贴吧")
+    failed = sign_round(
+        client, forums, tbs, stats,
+        delay_range=(1.0, 2.5), extra_rest=(5, 10),
+    )
 
-        fid = forum.get("id", "")
-        fname = forum.get("name", "")
-        result = client.sign_forum(fid, fname, tbs)
-        stats[result["status"]] += 1
-
-        # 打印单条结果
-        prefix = f"【{fname}】({idx + 1}/{total})"
-        if result["status"] == "success":
-            rank_str = f"，第 {result['rank']} 个签到" if result["rank"] else ""
-            logger.info(f"{prefix} 签到成功{rank_str}")
-        elif result["status"] == "exist":
-            logger.info(f"{prefix} {result['message']}")
-        elif result["status"] == "shield":
-            logger.warning(f"{prefix} {result['message']}")
-        else:
-            logger.error(f"{prefix} 签到失败: {result['message']}")
+    # 3.2 第二轮重试
+    if failed:
+        logger.info(f"\n===== 第 1 轮结束，{len(failed)} 个失败，15 秒后重试 =====")
+        time.sleep(15)
+        if new_tbs := client.get_tbs():
+            tbs = new_tbs
+            logger.info("已刷新 tbs")
+        for _ in failed:
+            stats["error"] -= 1  # 先扣回，sign_round 会重新统计
+        failed = sign_round(
+            client, failed, tbs, stats,
+            delay_range=(1.5, 3.0), extra_rest=(5, 8),
+            prefix="重试 ",
+        )
 
     # 4. 汇总
-    summary = (
-        f"\n========== 签到汇总 ==========\n"
-        f"贴吧总数: {total}\n"
-        f"签到成功: {stats['success']}\n"
-        f"已经签到: {stats['exist']}\n"
-        f"被屏蔽的: {stats['shield']}\n"
-        f"签到失败: {stats['error']}\n"
-        f"================================"
-    )
-    logger.info(summary)
+    summary = [
+        "\n========== 签到汇总 ==========",
+        f"贴吧总数: {total}",
+        f"签到成功: {stats['success']}",
+        f"已经签到: {stats['exist']}",
+        f"被屏蔽的: {stats['shield']}",
+        f"签到失败: {stats['error']}",
+    ]
+    if failed:
+        summary.append(f"重试失败贴吧: {', '.join(f.get('name', '') for f in failed)}")
+    summary.append("================================")
+    logger.info("\n".join(summary))
+
+    title, body, level = build_summary(total, stats, failed)
+    notify.send(title, body, level=level)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit as e:
+        if e.code:
+            notify.send(
+                "贴吧签到失败",
+                f"{datetime.now(BJ_TZ):%Y-%m-%d %H:%M:%S} 签到异常中断（退出码 {e.code}），请查看 Actions 日志",
+                level="timeSensitive",
+            )
+        raise
+    except Exception as exc:
+        logger.exception("签到过程发生未预期异常")
+        notify.send(
+            "贴吧签到异常",
+            f"{datetime.now(BJ_TZ):%Y-%m-%d %H:%M:%S} {type(exc).__name__}: {exc}",
+            level="timeSensitive",
+        )
+        raise

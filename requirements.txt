@@ -1,0 +1,4 @@
+# 这个仓库的 python 部分只需要 requests（run.py / tieba_client.py）。
+# 建环境：python -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
+# 跑：.venv\Scripts\python run.py
+requests>=2.32,<3
