@@ -4,9 +4,11 @@
 环境变量:
     BARK_KEY_SELF       自建服务端 key（服务端地址由 BARK_HOST_SELF 指定）
     BARK_KEY_OFFICIAL   官方服务端 key
-    BARK_HOST_SELF      自建服务端根地址，默认 https://bark.nosr.top
-                        （GitHub Actions 的境外 IP 会被自建域名的 WAF 地理质询拦住，
-                         在 workflow 里可指向 https://nosr-bark.nosr.workers.dev 绕过）
+    BARK_HOST_SELF      自建服务端根地址，默认 https://bark.nosr.top；
+                        可用逗号分隔多个地址，按顺序尝试直到成功，例如
+                        https://bark.nosr.top,https://nosr-bark.nosr.workers.dev
+                        （GitHub Actions 的境外 IP 可能被 Cloudflare 安全级别质询，
+                        此时会自动回退到第二个地址）
 
 两个 key 都没配置时静默跳过，绝不影响签到主流程。
 """
@@ -88,12 +90,18 @@ def send(title: str, body: str, level: str = "active", group: str = "贴吧签�
             logger.info(f"跳过 {label} 推送（未配置 {key_env}）")
             continue
         configured = True
-        base = (os.environ.get(host_env) or default_host).strip()
-        ok, reason = _send_one(label, base, key, payload)
-        if ok:
-            logger.info(f"{label} 推送成功（{base}）")
-            sent = True
-        else:
+        # 地址可用逗号分隔多个，按顺序尝试（域名被 WAF 质询时自动回退到 workers.dev）
+        hosts = [
+            h.strip()
+            for h in (os.environ.get(host_env) or default_host).split(",")
+            if h.strip()
+        ]
+        for base in hosts:
+            ok, reason = _send_one(label, base, key, payload)
+            if ok:
+                logger.info(f"{label} 推送成功（{base}）")
+                sent = True
+                break
             failures.append(f"{label}({base}): {reason}")
 
     if not configured:
