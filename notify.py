@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Bark 双通道推送（自建服务端 + 官方服务端）。
+"""Bark 主备推送（自建服务端为主，官方服务端为备）。
+
+推送按 SERVERS 顺序尝试，第一个成功即停——正常情况下手机只收到一条通知，
+只有自建通道（含其多地址回退）全部失败时才会改推官方服务器。
 
 环境变量:
     BARK_KEY_SELF       自建服务端 key（服务端地址由 BARK_HOST_SELF 指定）
@@ -81,9 +84,13 @@ def _send_one(label: str, base: str, key: str, payload: dict) -> tuple[bool, str
 
 
 def send(title: str, body: str, level: str = "active", group: str = "贴吧签到") -> bool:
-    """向所有已配置的通道推送，任一成功即返回 True。"""
+    """主备模式推送：按 SERVERS 顺序尝试，第一个成功的通道即停，不再重复推。
+
+    自建通道（BARK_HOST_SELF，可用逗号分隔多个地址）为主，官方服务器为备；
+    只有主通道的全部地址都失败时，才会推送到官方服务器。
+    """
     payload = {"title": title, "body": body, "level": level, "group": group, "icon": ICON}
-    sent, configured, failures = False, False, []
+    configured, failures = False, []
     for label, host_env, default_host, key_env in SERVERS:
         key = (os.environ.get(key_env) or "").strip()
         if not key:
@@ -100,15 +107,13 @@ def send(title: str, body: str, level: str = "active", group: str = "贴吧签�
             ok, reason = _send_one(label, base, key, payload)
             if ok:
                 logger.info(f"{label} 推送成功（{base}）")
-                sent = True
-                break
+                if failures:
+                    logger.info("主通道未送达，已由备用通道补发 — " + "；".join(failures))
+                return True
             failures.append(f"{label}({base}): {reason}")
 
     if not configured:
         logger.info("未配置任何 Bark 通道，跳过推送")
-    elif sent:
-        for f in failures:
-            logger.info(f"另有通道未送达，已被其他通道覆盖 — {f}")
     else:
         logger.warning("所有 Bark 通道推送均失败 — " + "；".join(failures))
-    return sent
+    return False
