@@ -27,8 +27,8 @@ jobs:
           BDUSS: ${{ secrets.BDUSS }}
           BARK_KEY_SELF: ${{ secrets.BARK_KEY_SELF }}
           BARK_KEY_OFFICIAL: ${{ secrets.BARK_KEY_OFFICIAL }}
-          # 自建域名已在 WAF 里对 bark 主机放行地理质询（2026-10-24），境外 runner 可直连
-          BARK_HOST_SELF: https://bark.nosr.top
+          # 首选自建域名；若被 Cloudflare 安全级别质询（境外 runner 常见）自动回退 workers.dev
+          BARK_HOST_SELF: https://bark.nosr.top,https://nosr-bark.nosr.workers.dev
         run: python run.py
 
   workflow-keepalive:
