@@ -29,16 +29,34 @@ TIMEOUT = 15
 ICON = "https://nosr.top/favicon.ico"
 
 
+HEADERS = {"User-Agent": "Bark/1.2.0 (TiebaSignIn)"}
+
+
+def _as_json(resp) -> dict:
+    """把响应体尽量解析成 dict；解析不出来时保留状态码与正文片段用于排错。"""
+    if not resp.content:
+        return {}
+    try:
+        return resp.json()
+    except ValueError:
+        return {
+            "raw": resp.text[:160],
+            "ctype": resp.headers.get("content-type", ""),
+        }
+
+
 def _send_one(label: str, base: str, key: str, payload: dict) -> tuple[bool, str]:
     """先试 POST JSON，失败再退回 GET 路径形式。返回 (是否成功, 失败原因)。"""
     base = base.rstrip("/")
     reason = ""
     try:
-        resp = requests.post(f"{base}/{key}", json=payload, timeout=TIMEOUT)
-        data = resp.json() if resp.content else {}
+        resp = requests.post(
+            f"{base}/{key}", json=payload, timeout=TIMEOUT, headers=HEADERS
+        )
+        data = _as_json(resp)
         if resp.ok and data.get("code") == 200:
             return True, ""
-        reason = f"POST HTTP {resp.status_code} {str(data)[:120]}"
+        reason = f"POST HTTP {resp.status_code} {str(data)[:160]}"
     except Exception as exc:
         reason = f"POST {type(exc).__name__}: {exc}"
 
@@ -49,11 +67,13 @@ def _send_one(label: str, base: str, key: str, payload: dict) -> tuple[bool, str
         query = urllib.parse.urlencode(
             {"level": payload["level"], "group": payload["group"]}
         )
-        resp = requests.get(f"{base}/{key}/{quoted}?{query}", timeout=TIMEOUT)
-        data = resp.json() if resp.content else {}
+        resp = requests.get(
+            f"{base}/{key}/{quoted}?{query}", timeout=TIMEOUT, headers=HEADERS
+        )
+        data = _as_json(resp)
         if resp.ok and data.get("code") == 200:
             return True, ""
-        return False, f"{reason}；GET HTTP {resp.status_code} {str(data)[:120]}"
+        return False, f"{reason}；GET HTTP {resp.status_code} {str(data)[:160]}"
     except Exception as exc:
         return False, f"{reason}；GET {type(exc).__name__}: {exc}"
 
